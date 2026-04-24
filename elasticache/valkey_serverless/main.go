@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,8 +12,6 @@ import (
 	"os"
 	"strconv"
 	"time"
-
-	"crypto/tls"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
