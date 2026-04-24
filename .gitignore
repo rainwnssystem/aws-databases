@@ -1,0 +1,46 @@
+# Go binaries and build output
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test and cache
+*.test
+*.out
+vendor/
+go/pkg/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# AWS / TLS certificates (sensitive)
+*.pem
+*.key
+*.crt
+*.p12
+
+# Logs
+*.log
+logs/
+
+# Claude Code
+CLAUDE.md
