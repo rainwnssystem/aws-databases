@@ -7,6 +7,7 @@ dist/
 *.so
 *.dylib
 elasticache/valkey/valkey
+rds/rds
 
 # Go test and cache
 *.test

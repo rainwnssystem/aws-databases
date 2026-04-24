@@ -1,4 +1,4 @@
-module github.com/rainwnssystem/aws-databases/rds
+module rds
 
 go 1.22
 
