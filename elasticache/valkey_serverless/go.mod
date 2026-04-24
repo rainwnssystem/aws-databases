@@ -1,4 +1,4 @@
-module github.com/rainwnssystem/aws-databases/elasticache/valkey
+module valkey_serverless
 
 go 1.22
 

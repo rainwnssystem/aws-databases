@@ -113,6 +113,10 @@ func listUsers(c *gin.Context) {
 		}
 		users = append(users, u)
 	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, users)
 }
 
@@ -267,11 +271,14 @@ func main() {
 	log.Println("connected to Valkey (ElastiCache)")
 
 	r := gin.Default()
-	r.GET("/users", listUsers)
-	r.GET("/users/:id", getUser)
-	r.POST("/users", createUser)
-	r.PUT("/users/:id", updateUser)
-	r.DELETE("/users/:id", deleteUser)
+	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+
+	users := r.Group("/api/v1/users")
+	users.GET("", listUsers)
+	users.GET("/:id", getUser)
+	users.POST("", createUser)
+	users.PUT("/:id", updateUser)
+	users.DELETE("/:id", deleteUser)
 
 	port := getEnv("SERVER_PORT", "8080")
 	log.Printf("server starting on :%s", port)
