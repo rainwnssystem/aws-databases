@@ -37,7 +37,7 @@ type UserRequest struct {
 
 var (
 	db  *sql.DB
-	rdb *redis.ClusterClient
+	rdb *redis.Client
 )
 
 const cacheTTL = 30 * time.Second
@@ -260,14 +260,19 @@ func main() {
 	}
 	log.Println("connected to MySQL (RDS)")
 
-	rdb = redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:     []string{getEnv("ELASTICACHE_HOST", "localhost") + ":6379"},
-		TLSConfig: &tls.Config{},
-	})
+	opts := &redis.Options{
+		Addr: getEnv("ELASTICACHE_HOST", "localhost") + ":6379",
+	}
+	// TLS optional; enabled when ELASTICACHE_TLS=true
+	if getEnv("ELASTICACHE_TLS", "false") == "true" {
+		opts.TLSConfig = &tls.Config{}
+	}
+
+	rdb = redis.NewClient(opts)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("ping cache: %v", err)
 	}
-	log.Println("connected to Valkey (ElastiCache)")
+	log.Println("connected to Valkey (ElastiCache node-based, cluster mode disabled)")
 
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })

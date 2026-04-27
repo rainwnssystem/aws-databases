@@ -8,15 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 )
 
 // ---- models ----
@@ -36,11 +37,11 @@ type UserRequest struct {
 // ---- globals ----
 
 var (
-	db  *sql.DB
-	rdb *redis.ClusterClient
+	db *sql.DB
+	mc *memcache.Client
 )
 
-const cacheTTL = 30 * time.Second
+const cacheTTL = 30 // seconds (memcache.Item.Expiration is int32)
 
 func cacheKey(id int) string {
 	return fmt.Sprintf("user:%d", id)
@@ -48,9 +49,9 @@ func cacheKey(id int) string {
 
 // ---- cache helpers ----
 
-func getFromCache(ctx context.Context, id int) (*User, bool) {
-	val, err := rdb.Get(ctx, cacheKey(id)).Result()
-	if errors.Is(err, redis.Nil) {
+func getFromCache(id int) (*User, bool) {
+	item, err := mc.Get(cacheKey(id))
+	if errors.Is(err, memcache.ErrCacheMiss) {
 		return nil, false
 	}
 	if err != nil {
@@ -58,24 +59,28 @@ func getFromCache(ctx context.Context, id int) (*User, bool) {
 		return nil, false
 	}
 	var u User
-	if err := json.Unmarshal([]byte(val), &u); err != nil {
+	if err := json.Unmarshal(item.Value, &u); err != nil {
 		return nil, false
 	}
 	return &u, true
 }
 
-func setCache(ctx context.Context, u *User) {
+func setCache(u *User) {
 	b, err := json.Marshal(u)
 	if err != nil {
 		return
 	}
-	if err := rdb.Set(ctx, cacheKey(u.ID), b, cacheTTL).Err(); err != nil {
+	if err := mc.Set(&memcache.Item{
+		Key:        cacheKey(u.ID),
+		Value:      b,
+		Expiration: cacheTTL,
+	}); err != nil {
 		log.Printf("cache set error: %v", err)
 	}
 }
 
-func delCache(ctx context.Context, id int) {
-	if err := rdb.Del(ctx, cacheKey(id)).Err(); err != nil {
+func delCache(id int) {
+	if err := mc.Delete(cacheKey(id)); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
 		log.Printf("cache del error: %v", err)
 	}
 }
@@ -126,14 +131,12 @@ func getUser(c *gin.Context) {
 		return
 	}
 
-	// cache hit
-	if u, ok := getFromCache(c.Request.Context(), id); ok {
+	if u, ok := getFromCache(id); ok {
 		log.Printf("cache HIT  user:%d", id)
 		c.JSON(http.StatusOK, u)
 		return
 	}
 
-	// cache miss → RDS
 	log.Printf("cache MISS user:%d", id)
 	u, err := queryUser(id)
 	if err != nil {
@@ -145,7 +148,7 @@ func getUser(c *gin.Context) {
 		return
 	}
 
-	setCache(c.Request.Context(), u)
+	setCache(u)
 	c.JSON(http.StatusOK, u)
 }
 
@@ -169,7 +172,7 @@ func createUser(c *gin.Context) {
 		return
 	}
 
-	setCache(c.Request.Context(), u)
+	setCache(u)
 	c.JSON(http.StatusCreated, u)
 }
 
@@ -196,14 +199,14 @@ func updateUser(c *gin.Context) {
 		return
 	}
 
-	delCache(c.Request.Context(), id)
+	delCache(id)
 
 	u, err := queryUser(id)
 	if err != nil || u == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user"})
 		return
 	}
-	setCache(c.Request.Context(), u)
+	setCache(u)
 	c.JSON(http.StatusOK, u)
 }
 
@@ -224,7 +227,7 @@ func deleteUser(c *gin.Context) {
 		return
 	}
 
-	delCache(c.Request.Context(), id)
+	delCache(id)
 	c.Status(http.StatusNoContent)
 }
 
@@ -260,14 +263,15 @@ func main() {
 	}
 	log.Println("connected to MySQL (RDS)")
 
-	rdb = redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:     []string{getEnv("ELASTICACHE_HOST", "localhost") + ":6379"},
-		TLSConfig: &tls.Config{},
-	})
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
+	elasticacheHost := getEnv("ELASTICACHE_HOST", "localhost")
+	mc = memcache.New(elasticacheHost + ":11211")
+	mc.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&tls.Dialer{Config: &tls.Config{ServerName: elasticacheHost}}).DialContext(ctx, network, address)
+	}
+	if err := mc.Ping(); err != nil {
 		log.Fatalf("ping cache: %v", err)
 	}
-	log.Println("connected to Valkey (ElastiCache)")
+	log.Println("connected to Memcached (ElastiCache)")
 
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })

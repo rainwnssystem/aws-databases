@@ -260,14 +260,19 @@ func main() {
 	}
 	log.Println("connected to MySQL (RDS)")
 
-	rdb = redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:     []string{getEnv("ELASTICACHE_HOST", "localhost") + ":6379"},
-		TLSConfig: &tls.Config{},
-	})
+	clusterOpts := &redis.ClusterOptions{
+		Addrs: []string{getEnv("ELASTICACHE_HOST", "localhost") + ":6379"},
+	}
+	// TLS is optional for node-based clusters; enabled when ELASTICACHE_TLS=true
+	if getEnv("ELASTICACHE_TLS", "false") == "true" {
+		clusterOpts.TLSConfig = &tls.Config{}
+	}
+
+	rdb = redis.NewClusterClient(clusterOpts)
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("ping cache: %v", err)
 	}
-	log.Println("connected to Valkey (ElastiCache)")
+	log.Println("connected to Valkey (ElastiCache node-based cluster)")
 
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })

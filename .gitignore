@@ -7,6 +7,11 @@ dist/
 *.so
 *.dylib
 elasticache/valkey_serverless/valkey
+elasticache/valkey_serverless/valkey_serverless
+elasticache/memcached_serverless/memcached_app
+elasticache/valkey_node_based/valkey_node_based
+elasticache/valkey_node_based_cluster/valkey_node_based_cluster
+keyspaces/keyspaces
 rds/rds
 
 # Go test and cache
